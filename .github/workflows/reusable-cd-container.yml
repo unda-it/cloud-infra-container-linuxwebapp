@@ -32,11 +32,13 @@ on:
         type: boolean
         required: false
         default: true
-      environment:
-        description: GitHub Environment name (e.g. prod). Use unprotected env names for non-prod.
-        type: string
-        required: false
-        default: prod
+      # TEMP (testing): GitHub Environment disabled so OIDC uses branch subject
+      # (ref:refs/heads/main) instead of environment:prod. Re-enable later for approvals.
+      # environment:
+      #   description: GitHub Environment name (e.g. prod). Use unprotected env names for non-prod.
+      #   type: string
+      #   required: false
+      #   default: prod
     secrets:
       AZURE_CLIENT_ID:
         required: true
@@ -52,7 +54,8 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment }}
+    # TEMP (testing): disabled — re-enable with: environment: ${{ inputs.environment }}
+    # environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
