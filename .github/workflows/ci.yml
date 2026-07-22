@@ -1,0 +1,39 @@
+# Thin caller for this repository. Other apps should call the reusable workflow
+# directly (or copy this file and change the `with:` / `vars` values).
+#
+# Required repository Variables:
+#   ACR_NAME, ACR_LOGIN_SERVER, IMAGE_NAME
+# Required repository Secrets (OIDC):
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+name: CI - Build and Push Container
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: Image tag (leave empty to use short SHA)
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  build-and-push:
+    uses: ./.github/workflows/reusable-ci-container.yml
+    with:
+      dockerfile: ./Dockerfile
+      context: .
+      image_name: ${{ vars.IMAGE_NAME }}
+      acr_name: ${{ vars.ACR_NAME }}
+      acr_login_server: ${{ vars.ACR_LOGIN_SERVER }}
+      image_tag: ${{ inputs.image_tag || '' }}
+      push_latest: true
+      # Reusable workflows always see event_name=workflow_call; decide push here.
+      push: ${{ github.event_name != 'pull_request' }}
+    secrets:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
