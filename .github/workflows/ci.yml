@@ -5,17 +5,23 @@
 #   ACR_NAME, ACR_LOGIN_SERVER, IMAGE_NAME
 # Required repository Secrets (OIDC):
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#
+# Tag releases: git tag v1.0.0 && git push origin v1.0.0
+# Image is tagged with the git tag (e.g. v1.0.0).
+# OIDC: add a federated credential for Tag (or matching refs/tags/v...) in Entra.
 name: CI - Build and Push Container
 
 on:
   push:
     branches: [main]
+    tags:
+      - "v*"
   pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Image tag (leave empty to use short SHA)
+        description: Image tag (leave empty to use git tag or short SHA)
         required: false
         type: string
         default: ""
@@ -36,7 +42,8 @@ jobs:
       image_name: ${{ vars.IMAGE_NAME }}
       acr_name: ${{ vars.ACR_NAME }}
       acr_login_server: ${{ vars.ACR_LOGIN_SERVER }}
-      image_tag: ${{ inputs.image_tag || '' }}
+      # workflow_dispatch input > git tag (v*) > empty (reusable uses short SHA)
+      image_tag: ${{ inputs.image_tag || (github.ref_type == 'tag' && github.ref_name) || '' }}
       push_latest: true
       # Reusable workflows always see event_name=workflow_call; decide push here.
       push: ${{ github.event_name != 'pull_request' }}

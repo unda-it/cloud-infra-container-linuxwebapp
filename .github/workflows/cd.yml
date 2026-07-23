@@ -6,19 +6,16 @@
 # Required repository Secrets (OIDC):
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 #
-# Tip: configure a GitHub Environment named "prod" (or your chosen name) with
-# required reviewers for production protection.
+# Manual run: Actions → "CD - Deploy to Linux Web App" → Run workflow → set image_tag.
+# Auto-deploy: uncomment the workflow_run block below.
 name: CD - Deploy to Linux Web App
 
 on:
-  workflow_run:
-    workflows: ["CI - Build and Push Container"]
-    types: [completed]
-    branches: [main]
+  # --- Manual deploy (always available) ---
   workflow_dispatch:
     inputs:
       image_tag:
-        description: Image tag to deploy (e.g. abc1234 or latest)
+        description: Image tag to deploy (e.g. v1.0.0, abc1234, or latest)
         required: true
         type: string
         default: latest
@@ -29,15 +26,23 @@ on:
       #   type: string
       #   default: prod
 
+  # --- Auto-deploy after successful CI (uncomment to enable) ---
+  # workflow_run:
+  #   workflows: ["CI - Build and Push Container"]
+  #   types: [completed]
+
 permissions:
   contents: read
   id-token: write
 
 jobs:
   resolve:
+    # When workflow_run is enabled: also allow successful non-PR CI completions.
     if: >
       github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event != 'pull_request')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,8 +57,14 @@ jobs:
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
           else
-            SHA="${{ github.event.workflow_run.head_sha }}"
-            echo "image_tag=${SHA::7}" >> "$GITHUB_OUTPUT"
+            HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
+            HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+            # Tag builds: head_branch is the tag name (e.g. v1.0.0)
+            if [[ "${HEAD_BRANCH}" == v* ]]; then
+              echo "image_tag=${HEAD_BRANCH}" >> "$GITHUB_OUTPUT"
+            else
+              echo "image_tag=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
+            fi
           fi
 
   deploy:
