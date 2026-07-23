@@ -28,10 +28,10 @@ on:
         required: true
         type: choice
         options:
-          - dev
+          - devenv
           - prod
           - production
-        default: dev
+        default: devenv
       swap_to_production:
         description: After deploy, swap this slot with production
         required: false
@@ -88,8 +88,8 @@ jobs:
             else
               echo "image_tag=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
             fi
-            # Auto path defaults to the dev slot (change if needed)
-            echo "slot_name=dev" >> "$GITHUB_OUTPUT"
+            # Auto path defaults to the devenv slot (change if needed)
+            echo "slot_name=devenv" >> "$GITHUB_OUTPUT"
             echo "swap_to_production=false" >> "$GITHUB_OUTPUT"
           fi
 
