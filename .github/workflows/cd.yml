@@ -6,7 +6,11 @@
 # Required repository Secrets (OIDC):
 #   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 #
-# Manual run: Actions → "CD - Deploy to Linux Web App" → Run workflow → set image_tag.
+# Manual run: Actions → "CD - Deploy to Linux Web App" → Run workflow
+#   - image_tag: e.g. v1.0.0 / latest
+#   - slot_name: Azure slot (dev / prod / production)
+#   - swap_to_production: optional promote via slot swap after deploy
+#
 # Auto-deploy: uncomment the workflow_run block below.
 name: CD - Deploy to Linux Web App
 
@@ -19,12 +23,27 @@ on:
         required: true
         type: string
         default: latest
-      # TEMP (testing): environment input disabled
-      # environment:
-      #   description: GitHub Environment (dev / test / prod)
-      #   required: true
-      #   type: string
-      #   default: prod
+      slot_name:
+        description: Azure deployment slot (match names in App Service)
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+          - production
+        default: dev
+      swap_to_production:
+        description: After deploy, swap this slot with production
+        required: false
+        type: boolean
+        default: false
+      # Re-enable when Entra has federated creds for environment:dev / environment:prod
+      # github_environment:
+      #   description: GitHub Environment (approvals / OIDC)
+      #   required: false
+      #   type: choice
+      #   options: [dev, prod]
+      #   default: dev
 
   # --- Auto-deploy after successful CI (uncomment to enable) ---
   # workflow_run:
@@ -48,6 +67,8 @@ jobs:
       contents: read
     outputs:
       image_tag: ${{ steps.meta.outputs.image_tag }}
+      slot_name: ${{ steps.meta.outputs.slot_name }}
+      swap_to_production: ${{ steps.meta.outputs.swap_to_production }}
     steps:
       - name: Resolve deploy inputs
         id: meta
@@ -56,6 +77,8 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "image_tag=${{ inputs.image_tag }}" >> "$GITHUB_OUTPUT"
+            echo "slot_name=${{ inputs.slot_name }}" >> "$GITHUB_OUTPUT"
+            echo "swap_to_production=${{ inputs.swap_to_production }}" >> "$GITHUB_OUTPUT"
           else
             HEAD_BRANCH="${{ github.event.workflow_run.head_branch }}"
             HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
@@ -65,6 +88,9 @@ jobs:
             else
               echo "image_tag=${HEAD_SHA::7}" >> "$GITHUB_OUTPUT"
             fi
+            # Auto path defaults to the dev slot (change if needed)
+            echo "slot_name=dev" >> "$GITHUB_OUTPUT"
+            echo "swap_to_production=false" >> "$GITHUB_OUTPUT"
           fi
 
   deploy:
@@ -79,9 +105,10 @@ jobs:
       acr_login_server: ${{ vars.ACR_LOGIN_SERVER }}
       image_name: ${{ vars.IMAGE_NAME }}
       image_tag: ${{ needs.resolve.outputs.image_tag }}
+      slot_name: ${{ needs.resolve.outputs.slot_name }}
       restart_after_deploy: true
-      # TEMP (testing): environment disabled
-      # environment: ${{ needs.resolve.outputs.environment }}
+      swap_to_production: ${{ needs.resolve.outputs.swap_to_production == 'true' }}
+      # environment: ${{ inputs.github_environment }}
     secrets:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}

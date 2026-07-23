@@ -1,4 +1,5 @@
-# Reusable CD: deploy a container image from ACR to an Azure Linux Web App.
+# Reusable CD: deploy a container image from ACR to an Azure Linux Web App
+# (optionally to a deployment slot).
 # Call from any repo:
 #   uses: <org>/<repo>/.github/workflows/reusable-cd-container.yml@<ref>
 name: Reusable CD - Deploy Container to Linux Web App
@@ -27,18 +28,28 @@ on:
         type: string
         required: false
         default: latest
+      slot_name:
+        description: Azure deployment slot (e.g. dev, prod). Use production for the main site.
+        type: string
+        required: false
+        default: production
       restart_after_deploy:
-        description: Restart the Web App after updating the container
+        description: Restart the target slot after updating the container
         type: boolean
         required: false
         default: true
-      # TEMP (testing): GitHub Environment disabled so OIDC uses branch subject
-      # (ref:refs/heads/main) instead of environment:prod. Re-enable later for approvals.
+      swap_to_production:
+        description: After deploy, swap this slot with production (ignored if slot is production)
+        type: boolean
+        required: false
+        default: false
+      # Re-enable for GitHub Environment approvals + OIDC subject environment:<name>.
+      # Requires a matching federated credential in Entra for each environment.
       # environment:
-      #   description: GitHub Environment name (e.g. prod). Use unprotected env names for non-prod.
+      #   description: GitHub Environment name (e.g. dev / prod)
       #   type: string
       #   required: false
-      #   default: prod
+      #   default: ""
     secrets:
       AZURE_CLIENT_ID:
         required: true
@@ -50,27 +61,33 @@ on:
       image:
         description: Fully qualified image that was deployed
         value: ${{ jobs.deploy.outputs.image }}
+      slot_name:
+        description: Slot that was deployed
+        value: ${{ jobs.deploy.outputs.slot_name }}
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # TEMP (testing): disabled — re-enable with: environment: ${{ inputs.environment }}
     # environment: ${{ inputs.environment }}
     permissions:
       contents: read
       id-token: write
     outputs:
       image: ${{ steps.img.outputs.image }}
+      slot_name: ${{ steps.img.outputs.slot_name }}
 
     steps:
-      - name: Resolve image
+      - name: Resolve image and slot
         id: img
         shell: bash
         run: |
           set -euo pipefail
+          SLOT="${{ inputs.slot_name }}"
+          if [ -z "$SLOT" ]; then SLOT="production"; fi
           IMAGE="${{ inputs.acr_login_server }}/${{ inputs.image_name }}:${{ inputs.image_tag }}"
           echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
-          echo "Deploying image: ${IMAGE}"
+          echo "slot_name=${SLOT}" >> "$GITHUB_OUTPUT"
+          echo "Deploying image: ${IMAGE} → slot: ${SLOT}"
 
       - name: Azure login (OIDC)
         uses: azure/login@v2
@@ -79,16 +96,28 @@ jobs:
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Deploy container to Linux Web App
+      - name: Deploy container to Linux Web App slot
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ inputs.webapp_name }}
           resource-group-name: ${{ inputs.resource_group }}
+          slot-name: ${{ steps.img.outputs.slot_name }}
           images: ${{ steps.img.outputs.image }}
 
-      - name: Restart Web App
+      - name: Restart Web App slot
         if: ${{ inputs.restart_after_deploy }}
         run: |
           az webapp restart \
             --name "${{ inputs.webapp_name }}" \
-            --resource-group "${{ inputs.resource_group }}"
+            --resource-group "${{ inputs.resource_group }}" \
+            --slot "${{ steps.img.outputs.slot_name }}"
+
+      - name: Swap slot with production
+        if: ${{ inputs.swap_to_production && steps.img.outputs.slot_name != 'production' }}
+        run: |
+          echo "Swapping slot '${{ steps.img.outputs.slot_name }}' → production"
+          az webapp deployment slot swap \
+            --name "${{ inputs.webapp_name }}" \
+            --resource-group "${{ inputs.resource_group }}" \
+            --slot "${{ steps.img.outputs.slot_name }}" \
+            --target-slot production
